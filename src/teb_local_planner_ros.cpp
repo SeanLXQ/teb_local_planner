@@ -225,11 +225,13 @@ bool TebLocalPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
   goal_reached_ = false;  
   
   // Get robot pose
+  //获取并存储当前机器人位置
   tf::Stamped<tf::Pose> robot_pose;
   costmap_ros_->getRobotPose(robot_pose);
   robot_pose_ = PoseSE2(robot_pose);
     
   // Get robot velocity
+  //获取当前机器人速度
   tf::Stamped<tf::Pose> robot_vel_tf;
   odom_helper_.getRobotVel(robot_vel_tf);
   robot_vel_.linear.x = robot_vel_tf.getOrigin().getX();
@@ -237,9 +239,11 @@ bool TebLocalPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
   robot_vel_.angular.z = tf::getYaw(robot_vel_tf.getRotation());
   
   // prune global plan to cut off parts of the past (spatially before the robot)
+  //修剪全局规划，切断机器人走过的部分
   pruneGlobalPlan(*tf_, robot_pose, global_plan_);
 
   // Transform global plan to the frame of interest (w.r.t. the local costmap)
+  //将全局规划转换为感兴趣的局部地图帧
   std::vector<geometry_msgs::PoseStamped> transformed_plan;
   int goal_idx;
   tf::StampedTransform tf_plan_to_global;
@@ -251,10 +255,12 @@ bool TebLocalPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
   }
 
   // update via-points container
+  //更新经过点容器
   if (!custom_via_points_active_)
     updateViaPointsContainer(transformed_plan, cfg_.trajectory.global_plan_viapoint_sep);
 
   // check if global goal is reached
+  //查看全局目标是否到达
   tf::Stamped<tf::Pose> global_goal;
   tf::poseStampedMsgToTF(global_plan_.back(), global_goal);
   global_goal.setData( tf_plan_to_global * global_goal );
@@ -271,10 +277,12 @@ bool TebLocalPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
   
   
   // check if we should enter any backup mode and apply settings
+  //检查我们是否需要根据备份模式来申请设置
   configureBackupModes(transformed_plan, goal_idx);
   
     
   // Return false if the transformed global plan is empty
+  //如果转换全局计划为空返回false
   if (transformed_plan.empty())
   {
     ROS_WARN("Transformed plan is empty. Cannot determine a local plan.");
