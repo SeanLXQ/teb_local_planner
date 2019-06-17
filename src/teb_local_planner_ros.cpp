@@ -290,6 +290,7 @@ bool TebLocalPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
   }
               
   // Get current goal point (last point of the transformed plan)
+  //获取当前目标位置（转换后规划的最后一个点位）
   tf::Stamped<tf::Pose> goal_point;
   tf::poseStampedMsgToTF(transformed_plan.back(), goal_point);
   robot_goal_.x() = goal_point.getOrigin().getX();
@@ -298,6 +299,7 @@ bool TebLocalPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
   {
     robot_goal_.theta() = estimateLocalGoalOrientation(global_plan_, goal_point, goal_idx, tf_plan_to_global);
     // overwrite/update goal orientation of the transformed plan with the actual goal (enable using the plan as initialization)
+    //覆盖/更新 换转后规划的目标方向  用实际的目标 (允许使用规划作为初始值)
     transformed_plan.back().pose.orientation = tf::createQuaternionMsgFromYaw(robot_goal_.theta());
   }  
   else
@@ -313,6 +315,7 @@ bool TebLocalPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
   tf::poseTFToMsg(robot_pose, transformed_plan.front().pose); // update start;
     
   // clear currently existing obstacles
+  //明确当前存在的障碍物
   obstacles_.clear();
   
   // Update obstacle container with costmap information or polygons provided by a costmap_converter plugin
@@ -322,30 +325,37 @@ bool TebLocalPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
     updateObstacleContainerWithCostmap();
   
   // also consider custom obstacles (must be called after other updates, since the container is not cleared)
+  //也考虑自定义障碍
   updateObstacleContainerWithCustomObstacles();
   
     
   // Do not allow config changes during the following optimization step
+  //在接下里的优化过程中不允许改变配置
   boost::mutex::scoped_lock cfg_lock(cfg_.configMutex());
     
   // Now perform the actual planning
+  //现在执行实际的规划
 //   bool success = planner_->plan(robot_pose_, robot_goal_, robot_vel_, cfg_.goal_tolerance.free_goal_vel); // straight line init
   bool success = planner_->plan(transformed_plan, &robot_vel_, cfg_.goal_tolerance.free_goal_vel);
   if (!success)
   {
     planner_->clearPlanner(); // force reinitialization for next time
+    //强制下一次重新规划
     ROS_WARN("teb_local_planner was not able to obtain a local plan for the current setting.");
     
     ++no_infeasible_plans_; // increase number of infeasible solutions in a row
+    //连续增加不可行方案的数量
     time_last_infeasible_plan_ = ros::Time::now();
     last_cmd_ = cmd_vel;
     return false;
   }
          
   // Check feasibility (but within the first few states only)
+  //检查可行性(只在前几种状态内)//默认为false
   if(cfg_.robot.is_footprint_dynamic)
   {
     // Update footprint of the robot and minimum and maximum distance from the center of the robot to its footprint vertices.
+    //更新机器人的足迹和从机器人中心到足迹顶点最大、最小距离值
     footprint_spec_ = costmap_ros_->getRobotFootprint();
     costmap_2d::calculateMinAndMaxDistances(footprint_spec_, robot_inscribed_radius_, robot_circumscribed_radius);
   }
@@ -358,6 +368,7 @@ bool TebLocalPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
     cmd_vel.angular.z = 0;
    
     // now we reset everything to start again with the initialization of new trajectories.
+    //现在我们用新的轨迹重置所有的东西来重新开始
     planner_->clearPlanner();
     ROS_WARN("TebLocalPlannerROS: trajectory is not feasible. Resetting planner...");
     
@@ -368,6 +379,7 @@ bool TebLocalPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
   }
 
   // Get the velocity command for this sampling interval
+  //获取采样间隔的速度命令
   if (!planner_->getVelocityCommand(cmd_vel.linear.x, cmd_vel.linear.y, cmd_vel.angular.z))
   {
     planner_->clearPlanner();
@@ -382,7 +394,7 @@ bool TebLocalPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
   saturateVelocity(cmd_vel.linear.x, cmd_vel.linear.y, cmd_vel.angular.z, cfg_.robot.max_vel_x, cfg_.robot.max_vel_y,
                    cfg_.robot.max_vel_theta, cfg_.robot.max_vel_x_backwards);
 
-  // convert rot-vel to steering angle if desired (carlike robot).
+  // convert rot-vel to steering angle if desired (carlike robot). 四驱机器人使用
   // The min_turning_radius is allowed to be slighly smaller since it is a soft-constraint
   // and opposed to the other constraints not affected by penalty_epsilon. The user might add a safety margin to the parameter itself.
   if (cfg_.robot.cmd_angle_instead_rotvel)
@@ -401,12 +413,15 @@ bool TebLocalPlannerROS::computeVelocityCommands(geometry_msgs::Twist& cmd_vel)
   }
   
   // a feasible solution should be found, reset counter
+  //可行方案找到，重置不可行方案计数器
   no_infeasible_plans_ = 0;
   
   // store last command (for recovery analysis etc.)
+  //存储上一条速度命令(用于恢复分析)
   last_cmd_ = cmd_vel;
   
-  // Now visualize everything    
+  // Now visualize everything 
+  //现在可视化
   planner_->visualize();
   visualization_->publishObstacles(obstacles_);
   visualization_->publishViaPoints(via_points_);
